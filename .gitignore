@@ -1,0 +1,6 @@
+__pycache__/
+runs/
+*.png
+*.jpg
+*.jpeg
+*.mp4
