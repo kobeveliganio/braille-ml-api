@@ -8,7 +8,7 @@ import base64
 app = Flask(__name__)
 
 # ✅ Allow specific origins (your localhost + your deployed frontend if you have one)
-CORS(app, origins=["http://localhost:5173", "https://your-frontend-domain.com"])
+CORS(app, origins=["*", "https://braille-ml-api.onrender.com/"])
 
 # Load YOLO model
 model = YOLO("best.pt")
