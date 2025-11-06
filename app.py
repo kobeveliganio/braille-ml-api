@@ -7,10 +7,15 @@ import base64
 
 app = Flask(__name__)
 
-# ✅ Enable CORS for all origins and allow Authorization header
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, allow_headers=["Content-Type", "Authorization"])
+# ✅ Enable CORS globally with support for headers and credentials
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization"],
+)
 
-
+# ✅ Handle preflight (OPTIONS) requests globally
 @app.before_request
 def handle_options():
     if request.method == "OPTIONS":
@@ -20,20 +25,23 @@ def handle_options():
         response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         return response, 200
 
+# ✅ Add headers to every response
+@app.after_request
+def after_request(response):
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    return response
 
-# ✅ Load YOLO model
+# ✅ Load YOLO model once on startup
 model = YOLO("best.pt")
 
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "Braille YOLO API is running."})
 
-@app.route("/predict", methods=["POST", "OPTIONS"])
+@app.route("/predict", methods=["POST"])
 def predict():
-    # ✅ Handle OPTIONS request (CORS preflight)
-    if request.method == "OPTIONS":
-        return jsonify({"status": "ok"}), 200
-
     # ✅ Validate file upload
     if "image" not in request.files:
         return jsonify({"error": "No image uploaded"}), 400
