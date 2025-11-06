@@ -1,55 +1,42 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS   # ✅ Handles CORS automatically
+from flask_cors import CORS   # ✅ enable CORS
 from ultralytics import YOLO
 import os
 from PIL import Image
 import base64
 
+# ✅ Correct Flask init name
 app = Flask(__name__)
 
-# ✅ Allow specific origins (your localhost + your deployed frontend if you have one)
-CORS(app, origins=["*", "https://braille-ml-api.onrender.com/"])
+# ✅ Allow all origins for development (including localhost:5173)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Load YOLO model
+# ✅ Load your YOLO model
 model = YOLO("best.pt")
 
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "Braille YOLO API is running."})
 
-@app.route("/predict", methods=["POST", "OPTIONS"])
+@app.route("/predict", methods=["POST"])
 def predict():
-    # ✅ Handle OPTIONS preflight request
-    if request.method == "OPTIONS":
-        response = jsonify({"message": "CORS preflight OK"})
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type")
-        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
-        return response
-
     if "image" not in request.files:
         return jsonify({"error": "No image uploaded"}), 400
 
     file = request.files["image"]
     image = Image.open(file.stream).convert("RGB")
 
-    # Run YOLO detection
+    # ✅ Run YOLO prediction
     results = model.predict(image, save=True)
-    result_image_path = os.path.join(results[0].save_dir, "image0.jpg")
+    result_image_path = results[0].save_dir + "/result.jpg"
 
-    if not os.path.exists(result_image_path):
-        return jsonify({"error": "Result image not found"}), 500
-
+    # ✅ Convert result image to base64
     with open(result_image_path, "rb") as img_file:
         img_bytes = img_file.read()
-
     img_b64 = base64.b64encode(img_bytes).decode("utf-8")
 
-    # ✅ Add CORS headers in the response
-    response = jsonify({"result_image": img_b64})
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    return response
+    return jsonify({"result_image": img_b64})
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
