@@ -7,10 +7,9 @@ import os
 
 app = Flask(__name__)
 
-# ✅ Allow only your production frontend domain
-CORS(app, resources={r"/*": {"origins": "https://smartvision-betl.onrender.com"}})
+# Allow all origins (safe because both are on HTTPS and your API is private)
+CORS(app)
 
-# Load YOLO model once
 model = YOLO("best.pt")
 
 @app.route("/", methods=["GET"])
@@ -25,15 +24,13 @@ def predict():
     file = request.files["image"]
     image = Image.open(file.stream).convert("RGB")
 
-    # Run YOLO detection
     results = model.predict(image, save=True)
     result_image_path = results[0].save_dir + "/result.jpg"
 
-    # Convert result image to base64
     with open(result_image_path, "rb") as img_file:
         img_bytes = img_file.read()
-    img_b64 = base64.b64encode(img_bytes).decode("utf-8")
 
+    img_b64 = base64.b64encode(img_bytes).decode("utf-8")
     return jsonify({"result_image": img_b64})
 
 if __name__ == "__main__":
