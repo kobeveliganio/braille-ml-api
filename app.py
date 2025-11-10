@@ -7,7 +7,7 @@ import os
 
 app = Flask(__name__)
 
-# ✅ Allow only your frontend domain (adjust this URL)
+# ✅ Allow only your production frontend domain
 CORS(app, resources={r"/*": {"origins": "https://smartvision-betl.onrender.com"}})
 
 # Load YOLO model once
