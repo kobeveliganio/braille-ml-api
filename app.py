@@ -2,68 +2,79 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from ultralytics import YOLO
 import cv2
-import os
+import numpy as np
 import time
-from supabase import create_client, Client
+import os
+import io
+from PIL import Image
 import base64
 
+# Initialize app
 app = Flask(__name__)
 CORS(app)
 
-# Initialize YOLO model
-model = YOLO("best.pt")
+# Load YOLO model once
+try:
+    model = YOLO("best.pt")
+    print("✅ YOLO model loaded successfully.")
+except Exception as e:
+    print("❌ Failed to load YOLO model:", e)
+    model = None
 
-# Supabase configuration (store in env variables)
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")  # Use service key for server uploads
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"message": "Braille YOLO API is running."}), 200
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    file = request.files.get("file") or request.files.get("image")
-    if not file:
-        return jsonify({"error": "No file uploaded"}), 400
+    try:
+        if model is None:
+            return jsonify({"error": "YOLO model not loaded"}), 500
 
-    # Save uploaded file temporarily
-    timestamp = int(time.time())
-    temp_filename = f"temp_{timestamp}_{file.filename}"
-    temp_path = os.path.join("/tmp", temp_filename)
-    file.save(temp_path)
+        # Check uploaded file
+        file = request.files.get("file") or request.files.get("image")
+        if not file:
+            return jsonify({"error": "No file uploaded"}), 400
 
-    # Run YOLO prediction
-    results = model.predict(source=temp_path, conf=0.25, verbose=False)
+        # Convert to OpenCV image
+        image_stream = io.BytesIO(file.read())
+        pil_image = Image.open(image_stream).convert("RGB")
+        img_np = np.array(pil_image)[:, :, ::-1].copy()  # RGB → BGR
 
-    # Annotate image
-    annotated_img = results[0].plot()  # numpy array
-    annotated_filename = f"annotated_{timestamp}_{file.filename}"
-    annotated_path = os.path.join("/tmp", annotated_filename)
-    cv2.imwrite(annotated_path, annotated_img)
+        # Run YOLO prediction
+        results = model.predict(source=img_np, conf=0.25, verbose=False)
 
-    # Upload annotated image to Supabase storage
-    with open(annotated_path, "rb") as f:
-        file_bytes = f.read()
+        # Annotate image
+        annotated_img = results[0].plot()  # numpy array
 
-    storage_path = f"uploaded_works/{annotated_filename}"
-    response = supabase.storage.from_("ml-server").upload(storage_path, file_bytes, {"upsert": True})
+        # Encode annotated image to base64
+        _, buffer = cv2.imencode(".jpg", annotated_img)
+        img_b64 = base64.b64encode(buffer).decode("utf-8")
 
-    if response.get("error"):
-        return jsonify({"error": f"Supabase upload failed: {response['error']['message']}" }), 500
+        # Build predictions array
+        predictions = []
+        for box in results[0].boxes:
+            cls_id = int(box.cls[0])
+            confidence = float(box.conf[0])
+            label = results[0].names[cls_id]
+            predictions.append({
+                "label": label,
+                "confidence": round(confidence, 2)
+            })
 
-    # Get public URL
-    public_url = supabase.storage.from_("ml-server").get_public_url(storage_path).get("publicUrl")
+        translated_text = "".join([p["label"][0].upper() for p in predictions])
 
-    # Build predictions array
-    predictions = []
-    for box in results[0].boxes:
-        cls_id = int(box.cls[0])
-        confidence = float(box.conf[0])
-        label = results[0].names[cls_id]
-        predictions.append({"label": label, "confidence": round(confidence, 2)})
+        return jsonify({
+            "annotated_image_base64": img_b64,
+            "braille_text": [p["label"] for p in predictions],
+            "translated_text": translated_text
+        }), 200
 
-    translated_text = "".join([p["label"][0].upper() for p in predictions])
+    except Exception as e:
+        print("🔥 Server error:", e)
+        return jsonify({"error": str(e)}), 500
 
-    return jsonify({
-        "annotated_image_url": public_url,
-        "braille_text": [p["label"] for p in predictions],
-        "translated_text": translated_text
-    })
+# Keep Flask runnable locally
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
