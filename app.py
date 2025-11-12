@@ -11,19 +11,24 @@ import base64
 # Initialize Flask app
 app = Flask(__name__)
 
-# ✅ Explicitly allow CORS from your frontend
-# CORS(app, resources={r"/api/*": {"origins": "*", "allow_headers": ["Content-Type", "Authorization"],
-#              "expose_headers": ["Content-Type"],
-#              "supports_credentials": True,}})
-
-
-
-# CORS(app, resources={r"/*": {"origins": "*", "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"], "supports_credentials": True}})
+# ✅ Configure CORS properly for your frontend
 CORS(app,
      origins=["https://smartvision-betl.onrender.com"],
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
-     expose_headers=["Content-Type"])
+     expose_headers=["Content-Type"],
+     methods=["GET", "POST", "OPTIONS"])
+
+# ✅ Handle OPTIONS requests manually to guarantee CORS success
+@app.route("/predict", methods=["OPTIONS"])
+def predict_options():
+    response = app.make_default_options_response()
+    headers = response.headers
+    headers["Access-Control-Allow-Origin"] = "https://smartvision-betl.onrender.com"
+    headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+    headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 # Optional: API key for security
 ML_API_KEY = os.environ.get("ML_API_KEY", "my-secret-key-123")  # Set this in Render .env
@@ -93,15 +98,22 @@ def predict():
         # Example translation
         translated_text = "".join([p["label"][0].upper() for p in predictions])
 
-        return jsonify({
+        # ✅ Add CORS headers to the response
+        response = jsonify({
             "annotated_image_base64": img_b64,
             "braille_text": [p["label"] for p in predictions],
             "translated_text": translated_text
-        }), 200
+        })
+        response.headers.add("Access-Control-Allow-Origin", "https://smartvision-betl.onrender.com")
+        response.headers.add("Access-Control-Allow-Credentials", "true")
+        return response, 200
 
     except Exception as e:
         print("🔥 Server error:", e)
-        return jsonify({"error": str(e)}), 500
+        response = jsonify({"error": str(e)})
+        response.headers.add("Access-Control-Allow-Origin", "https://smartvision-betl.onrender.com")
+        response.headers.add("Access-Control-Allow-Credentials", "true")
+        return response, 500
 
 # Run Flask locally or on Render
 if __name__ == "__main__":
