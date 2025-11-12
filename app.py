@@ -18,7 +18,12 @@ app = Flask(__name__)
 
 
 
-CORS(app, resources={r"/*": {"origins": "*", "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"], "supports_credentials": True}})
+# CORS(app, resources={r"/*": {"origins": "*", "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"], "supports_credentials": True}})
+CORS(app,
+     origins=["https://smartvision-betl.onrender.com"],
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+     expose_headers=["Content-Type"])
 
 # Optional: API key for security
 ML_API_KEY = os.environ.get("ML_API_KEY", "my-secret-key-123")  # Set this in Render .env
@@ -31,7 +36,7 @@ def get_model():
         try:
             model = YOLO("best.pt")
             print("✅ YOLO model loaded successfully.")
-        except Exception as e:
+        except Exception as e: 
             print("❌ Failed to load YOLO model:", e)
             model = None
     return model
