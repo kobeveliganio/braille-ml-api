@@ -1,29 +1,15 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from ultralytics import YOLO
-import cv2
-import numpy as np
-import os
-import io
+import cv2, numpy as np, os, io, base64
 from PIL import Image
-import base64
 
-# Initialize Flask app
 app = Flask(__name__)
 
-# ✅ Explicitly allow CORS from your frontend
-# CORS(app, resources={r"/api/*": {"origins": "*", "allow_headers": ["Content-Type", "Authorization"],
-#              "expose_headers": ["Content-Type"],
-#              "supports_credentials": True,}})
+# Enable CORS for all routes and all origins
+CORS(app, supports_credentials=True)
 
-
-
-CORS(app, resources={r"/*": {"origins": "*", "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"], "supports_credentials": True}})
-
-# Optional: API key for security
-ML_API_KEY = os.environ.get("ML_API_KEY", "my-secret-key-123")  # Set this in Render .env
-
-# Lazy-load YOLO model to avoid Render 502 on startup
+# Lazy-load YOLO model
 model = None
 def get_model():
     global model
@@ -31,61 +17,56 @@ def get_model():
         try:
             model = YOLO("best.pt")
             print("✅ YOLO model loaded successfully.")
-        except Exception as e: 
+        except Exception as e:
             print("❌ Failed to load YOLO model:", e)
             model = None
     return model
 
-# Home route
+ML_API_KEY = os.environ.get("ML_API_KEY", "my-secret-key-123")
+
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "Braille YOLO API is running."}), 200
 
-# Prediction route
-@app.route("/predict", methods=["POST"])
+# Allow both POST and OPTIONS for preflight
+@app.route("/predict", methods=["POST", "OPTIONS"])
 def predict():
+    if request.method == "OPTIONS":
+        # Flask-CORS will handle the headers automatically
+        return jsonify({"message": "CORS preflight"}), 200
+
     try:
         model_instance = get_model()
         if model_instance is None:
             return jsonify({"error": "YOLO model not loaded"}), 500
 
-        # Optional: validate API key
+        # API key check
         api_key = request.headers.get("Authorization")
         if not api_key or api_key != f"Bearer {ML_API_KEY}":
-            return jsonify({"error": "Unauthorized: Invalid API key"}), 401
+            return jsonify({"error": "Unauthorized"}), 401
 
         # Get uploaded file
         file = request.files.get("file") or request.files.get("image")
         if not file:
             return jsonify({"error": "No file uploaded"}), 400
 
-        # Convert to OpenCV format
-        image_stream = io.BytesIO(file.read())
-        pil_image = Image.open(image_stream).convert("RGB")
-        img_np = np.array(pil_image)[:, :, ::-1].copy()  # RGB → BGR
+        # Convert to OpenCV
+        pil_image = Image.open(io.BytesIO(file.read())).convert("RGB")
+        img_np = np.array(pil_image)[:, :, ::-1].copy()
 
-        # Run YOLO prediction
+        # YOLO prediction
         results = model_instance.predict(source=img_np, conf=0.25, verbose=False)
-
-        # Annotate image
         annotated_img = results[0].plot()
 
-        # Convert annotated image to base64
         _, buffer = cv2.imencode(".jpg", annotated_img)
         img_b64 = base64.b64encode(buffer).decode("utf-8")
 
-        # Build predictions array
         predictions = []
         for box in results[0].boxes:
             cls_id = int(box.cls[0])
-            confidence = float(box.conf[0])
             label = results[0].names[cls_id]
-            predictions.append({
-                "label": label,
-                "confidence": round(confidence, 2)
-            })
+            predictions.append({"label": label, "confidence": float(box.conf[0])})
 
-        # Example translation
         translated_text = "".join([p["label"][0].upper() for p in predictions])
 
         return jsonify({
@@ -98,7 +79,6 @@ def predict():
         print("🔥 Server error:", e)
         return jsonify({"error": str(e)}), 500
 
-# Run Flask locally or on Render
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
