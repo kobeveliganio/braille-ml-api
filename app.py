@@ -5,11 +5,9 @@ import cv2, numpy as np, os, io, base64
 from PIL import Image
 
 app = Flask(__name__)
-
-# Enable CORS for all routes and all origins
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-# Lazy-load YOLO model
+# Lazy-load YOLO
 model = None
 def get_model():
     global model
@@ -26,29 +24,25 @@ ML_API_KEY = os.environ.get("ML_API_KEY", "my-secret-key-123")
 
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"message": "Braille YOLO API is running."}), 200
+    return jsonify({"message": "Braille YOLO API is running."})
 
-# Allow both POST and OPTIONS for preflight
 @app.route("/predict", methods=["POST", "OPTIONS"])
 def predict():
     if request.method == "OPTIONS":
-        # Flask-CORS will handle the headers automatically
-        return jsonify({"message": "CORS preflight"}), 200
+        return '', 200  # Handle preflight
 
     try:
-        model_instance = get_model()
-        if model_instance is None:
-            return jsonify({"error": "YOLO model not loaded"}), 500
-
-        # API key check
         api_key = request.headers.get("Authorization")
         if not api_key or api_key != f"Bearer {ML_API_KEY}":
             return jsonify({"error": "Unauthorized"}), 401
 
-        # Get uploaded file
-        file = request.files.get("file") or request.files.get("image")
+        file = request.files.get("file")
         if not file:
             return jsonify({"error": "No file uploaded"}), 400
+
+        model_instance = get_model()
+        if model_instance is None:
+            return jsonify({"error": "YOLO model not loaded"}), 500
 
         # Convert to OpenCV
         pil_image = Image.open(io.BytesIO(file.read())).convert("RGB")
@@ -61,19 +55,14 @@ def predict():
         _, buffer = cv2.imencode(".jpg", annotated_img)
         img_b64 = base64.b64encode(buffer).decode("utf-8")
 
-        predictions = []
-        for box in results[0].boxes:
-            cls_id = int(box.cls[0])
-            label = results[0].names[cls_id]
-            predictions.append({"label": label, "confidence": float(box.conf[0])})
-
+        predictions = [{"label": results[0].names[int(box.cls[0])], "confidence": float(box.conf[0])} for box in results[0].boxes]
         translated_text = "".join([p["label"][0].upper() for p in predictions])
 
         return jsonify({
             "annotated_image_base64": img_b64,
             "braille_text": [p["label"] for p in predictions],
             "translated_text": translated_text
-        }), 200
+        })
 
     except Exception as e:
         print("🔥 Server error:", e)
