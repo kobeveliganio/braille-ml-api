@@ -12,7 +12,7 @@ import base64
 app = Flask(__name__)
 
 # ✅ Explicitly allow CORS from your frontend
-CORS(app, resources={r"/api/*": {"origins": "https://smartvision-betl.onrender.com", "allow_headers": ["Content-Type", "X-Requested-With"],
+CORS(app, resources={r"/api/*": {"origins": "*", "allow_headers": ["Content-Type", "Authorization"],
              "expose_headers": ["Content-Type"],
              "supports_credentials": True,}})
 
