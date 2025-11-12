@@ -9,9 +9,10 @@ app = Flask(__name__)
 # ✅ Allow only your deployed frontend (no duplicates)
 CORS(
     app,
-    origins=["https://smartvision-betl.onrender.com"],
+    origins=["https://smartvision-new-website.vercel.app"],
     supports_credentials=True
 )
+
 
 # Lazy-load YOLO model
 model = None
