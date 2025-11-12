@@ -7,7 +7,7 @@ from PIL import Image
 app = Flask(__name__)
 
 # Enable CORS for all routes and all origins
-CORS(app, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 # Lazy-load YOLO model
 model = None
