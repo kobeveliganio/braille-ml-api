@@ -8,55 +8,63 @@ import io
 from PIL import Image
 import base64
 
-# Initialize app
+# Initialize Flask app
 app = Flask(__name__)
 
-# ✅ Allow CORS only from your React frontend
+# ✅ Explicitly allow CORS from your frontend
 CORS(app, origins=["https://smartvision-betl.onrender.com"], supports_credentials=True)
 
-# Optional: Set your API key for requests
-ML_API_KEY = os.environ.get("ML_API_KEY", "my-secret-key-123")  # set in Render .env
+# Optional: API key for security
+ML_API_KEY = os.environ.get("ML_API_KEY", "my-secret-key-123")  # Set this in Render .env
 
-# Load YOLO model once
-try:
-    model = YOLO("best.pt")
-    print("✅ YOLO model loaded successfully.")
-except Exception as e:
-    print("❌ Failed to load YOLO model:", e)
-    model = None
+# Lazy-load YOLO model to avoid Render 502 on startup
+model = None
+def get_model():
+    global model
+    if model is None:
+        try:
+            model = YOLO("best.pt")
+            print("✅ YOLO model loaded successfully.")
+        except Exception as e:
+            print("❌ Failed to load YOLO model:", e)
+            model = None
+    return model
 
+# Home route
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "Braille YOLO API is running."}), 200
 
+# Prediction route
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
-        if model is None:
+        model_instance = get_model()
+        if model_instance is None:
             return jsonify({"error": "YOLO model not loaded"}), 500
 
-        # Optional: Validate API key
+        # Optional: validate API key
         api_key = request.headers.get("Authorization")
         if not api_key or api_key != f"Bearer {ML_API_KEY}":
             return jsonify({"error": "Unauthorized: Invalid API key"}), 401
 
-        # Check uploaded file
+        # Get uploaded file
         file = request.files.get("file") or request.files.get("image")
         if not file:
             return jsonify({"error": "No file uploaded"}), 400
 
-        # Convert to OpenCV image
+        # Convert to OpenCV format
         image_stream = io.BytesIO(file.read())
         pil_image = Image.open(image_stream).convert("RGB")
         img_np = np.array(pil_image)[:, :, ::-1].copy()  # RGB → BGR
 
         # Run YOLO prediction
-        results = model.predict(source=img_np, conf=0.25, verbose=False)
+        results = model_instance.predict(source=img_np, conf=0.25, verbose=False)
 
         # Annotate image
-        annotated_img = results[0].plot()  # numpy array
+        annotated_img = results[0].plot()
 
-        # Encode annotated image to base64
+        # Convert annotated image to base64
         _, buffer = cv2.imencode(".jpg", annotated_img)
         img_b64 = base64.b64encode(buffer).decode("utf-8")
 
@@ -71,7 +79,7 @@ def predict():
                 "confidence": round(confidence, 2)
             })
 
-        # Simple translation example
+        # Example translation
         translated_text = "".join([p["label"][0].upper() for p in predictions])
 
         return jsonify({
@@ -84,7 +92,7 @@ def predict():
         print("🔥 Server error:", e)
         return jsonify({"error": str(e)}), 500
 
-# Keep Flask runnable locally
+# Run Flask locally or on Render
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
